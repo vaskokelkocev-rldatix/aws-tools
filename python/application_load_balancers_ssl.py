@@ -8,10 +8,20 @@ IGNORED_LOAD_BALANCERS = ["asb-nhsp-legacy-test", "jenkins-lb-tf"]
 READ_ONLY = True
 
 # Create a Boto3 client for the AWS Elastic Load Balancing (ELB) service
-elbv2_client = boto3.client('elbv2')
+elbv2_client = boto3.client('elbv2', region_name='ap-southeast-2')
 
 # Retrieve a list of all Application Load Balancers in the current AWS account
 load_balancers = elbv2_client.describe_load_balancers(PageSize=400)
+
+
+def get_lb_tags(client, lb_arn):
+    r = client.describe_tags(ResourceArns=[lb_arn])
+    tags = []
+    for t in r['TagDescriptions'][0]['Tags']:
+        tag = {t['Key']: t['Value']}
+        tags.append(tag)
+    return tags
+
 
 pre_upgrade = {}
 updated = {}
@@ -35,7 +45,8 @@ for lb in load_balancers['LoadBalancers']:
     for listener in lb_listeners['Listeners']:
         if listener['Protocol'] in ['HTTPS', 'TLS']:
             ssl_policy = listener['SslPolicy']
-            lb_info = {"arn": lb_arn, "name": lb_name, "ssl_policy": ssl_policy}
+            tags = get_lb_tags(elbv2_client, lb['LoadBalancerArn'])
+            lb_info = {"arn": lb_arn, "name": lb_name, "ssl_policy": ssl_policy, "tags": tags}
             if ssl_policy not in pre_upgrade:
                 pre_upgrade[ssl_policy] = [lb_info]
             else:

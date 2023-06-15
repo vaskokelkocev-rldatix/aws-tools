@@ -11,10 +11,20 @@ IGNORED_LOAD_BALANCERS = ["asb-nhsp-legacy-test", "jenkins-lb-tf"]
 READ_ONLY = True
 
 # Create a Boto3 client for the AWS Elastic Load Balancing (ELB) service
-elb_client = boto3.client('elb')
+elb_client = boto3.client('elb', region_name='ap-southeast-2')
 
 # Retrieve a list of all Application Load Balancers in the current AWS account
 load_balancers = elb_client.describe_load_balancers()
+
+
+def get_lb_tags(client, lb_name):
+    r = client.describe_tags(LoadBalancerNames=[lb_name])
+    tags = []
+    for t in r['TagDescriptions'][0]['Tags']:
+        tag = {t['Key']: t['Value']}
+        tags.append(tag)
+    return tags
+
 
 pre_upgrade = {}
 updated = {}
@@ -32,18 +42,23 @@ for lb in load_balancers['LoadBalancerDescriptions']:
     if lb_name in IGNORED_LOAD_BALANCERS:
         print(f"Ignoring Load Balancer: {lb_name}")
         continue
+    # print(lb)
     # lb_arn = lb['LoadBalancerArn']
     # lb_listeners = elb_client.describe_listeners(LoadBalancerArn=lb_arn)
     for listener in lb['ListenerDescriptions']:
-        print(lb_name, listener)
-        continue
-        if listener['Protocol'] == 'HTTPS':
-            ssl_policy = listener['SslPolicy']
+        # print(lb_name, listener)
+        if listener['Listener']['Protocol'] == 'HTTPS':
+            ssl_policy = listener['PolicyNames'][0]
+            tags = get_lb_tags(elb_client, lb_name)
+            # print(tags)
             lb_info = {
-                "arn": lb_arn,
+                # "arn": lb_arn,
                 "name": lb_name,
-                "ssl_policy": ssl_policy
+                "ssl_policy": ssl_policy,
+                "tags": tags
             }
+            # print(lb_info)
+            # continue
             if ssl_policy not in pre_upgrade:
                 pre_upgrade[ssl_policy] = [lb_info]
             else:
@@ -53,7 +68,7 @@ for lb in load_balancers['LoadBalancerDescriptions']:
             if READ_ONLY is False and ssl_policy not in ACCEPTABLE_POLICIES:
                 update = {
                     "name": lb_name,
-                    "arn": lb_arn,
+                    # "arn": lb_arn,
                     "listener_arn": listener['ListenerArn'],
                     "old_policy": ssl_policy,
                     "new_policy": REQUIRED_SSL_POLICY
